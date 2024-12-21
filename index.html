@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF-VIEWER</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <link rel="manifest" href="manifest.json" />
+    <style>
+      body {
+        background-color: #0d1117;
+        color: #c9d1d9;
+      }
+      .book-container {
+        perspective: 1000px;
+        position: relative;
+        height: 80vh;
+        max-width: 90vw;
+        margin: auto;
+        background-color: #0d1117;
+        border: 1px solid #30363d;
+      }
+      .page {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        transform-origin: left center;
+        transform-style: preserve-3d;
+        transition: transform 0.8s;
+        cursor: pointer;
+      }
+      .page.flipped {
+        transform: rotateY(-180deg);
+      }
+      .page-front,
+      .page-back {
+        position: absolute;
+        width: 100%;
+        height: 100%;
+        backface-visibility: hidden;
+        background-color: #0d1117;
+        border: 1px solid #30363d;
+      }
+      .page-back {
+        transform: rotateY(180deg);
+      }
+      .page-content {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      .loading-progress {
+        transition: width 0.3s ease;
+      }
+      .modal {
+        display: none;
+        position: fixed;
+        z-index: 50;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        overflow: auto;
+        background-color: rgba(13, 17, 23, 0.8);
+      }
+      .modal-content {
+        background-color: #0d1117;
+        margin: 15% auto;
+        padding: 20px;
+        border: 1px solid #30363d;
+        width: 80%;
+        max-width: 500px;
+      }
+      .close {
+        color: #c9d1d9;
+        float: right;
+        font-size: 28px;
+        font-weight: bold;
+      }
+      .close:hover,
+      .close:focus {
+        color: #58a6ff;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .btn {
+        background-color: #1f6feb;
+        color: #fff;
+        padding: 10px 20px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background-color 0.3s ease;
+      }
+      .btn:hover {
+        background-color: #2d76e0;
+      }
+      .border-dashed {
+        border: 2px dashed #30363d;
+      }
+      .hover-border-blue:hover {
+        border-color: #1f6feb;
+      }
+      .bg-gray {
+        background-color: #0d1117;
+      }
+      .text-center {
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen bg-gray dark:bg-gray-900">
+    <!-- Modal -->
+    <div id="uploadModal" class="modal">
+      <div class="modal-content">
+        <span class="close">&times;</span>
+        <h2 class="text-lg font-bold text-gray-800 dark:text-white">
+          Upload your PDF
+        </h2>
+        <div
+          id="uploadZoneModal"
+          class="mt-4 max-w-full rounded-lg border-dashed border-blue-400 p-8 hover-border-blue"
+        >
+          <input
+            type="file"
+            id="fileInputModal"
+            accept="application/pdf"
+            class="hidden"
+          />
+          <div class="text-center">
+            <svg
+              class="mx-auto h-12 w-12 text-blue-500"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+              />
+            </svg>
+            <p class="mt-2 text-c9d1d9 dark:text-gray-300">
+              Drag and drop your PDF here or click to upload
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="container mx-auto px-4 py-8">
+      <header class="mb-8 text-center">
+        <h1 class="mb-2 text-3xl font-bold text-c9d1d9 dark:text-white">
+          PDF_VIEWER
+        </h1>
+      </header>
+
+      <div id="loadingBar" class="mx-auto mb-4 hidden max-w-md">
+        <div class="h-2 w-full rounded-full bg-gray-200 dark:bg-gray-700">
+          <div
+            id="progressBar"
+            class="loading-progress h-2 rounded-full bg-blue-500"
+            style="width: 0%"
+          ></div>
+        </div>
+        <p
+          id="loadingText"
+          class="mt-2 text-center text-c9d1d9 dark:text-gray-400"
+        ></p>
+      </div>
+
+      <div
+        id="bookContainer"
+        class="book-container mx-auto hidden rounded-lg bg-gray p-8 shadow-xl dark:bg-gray-800"
+      >
+        <div id="pagesContainer" class="relative h-full w-full"></div>
+      </div>
+
+      <div id="controls" class="mt-6 hidden text-center">
+        <button id="prevBtn" class="mr-4 btn">Previous</button>
+        <span
+          id="pageInfo"
+          class="inline-block min-w-[100px] rounded-lg bg-gray-100 px-4 py-2 text-c9d1d9 dark:bg-gray-800 dark:text-gray-300"
+        >
+          Page <span id="currentPage">0</span> of <span id="totalPages">0</span>
+        </span>
+        <button id="nextBtn" class="ml-4 btn">Next</button>
+      </div>
+
+      <div id="showUploadBtnContainer" class="mt-6 hidden text-center">
+        <button id="showUploadBtn" class="btn">Upload Another PDF</button>
+      </div>
+    </div>
+
+    <script>
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+      const fileInputModal = document.getElementById("fileInputModal");
+      const uploadZoneModal = document.getElementById("uploadZoneModal");
+      const uploadModal = document.getElementById("uploadModal");
+      const closeModal = document.querySelector(".close");
+      const bookContainer = document.getElementById("bookContainer");
+      const pagesContainer = document.getElementById("pagesContainer");
+      const controls = document.getElementById("controls");
+      const prevBtn = document.getElementById("prevBtn");
+      const nextBtn = document.getElementById("nextBtn");
+      const currentPageSpan = document.getElementById("currentPage");
+      const totalPagesSpan = document.getElementById("totalPages");
+      const loadingBar = document.getElementById("loadingBar");
+      const progressBar = document.getElementById("progressBar");
+      const loadingText = document.getElementById("loadingText");
+      const showUploadBtnContainer = document.getElementById(
+        "showUploadBtnContainer"
+      );
+      const showUploadBtn = document.getElementById("showUploadBtn");
+
+      let currentPage = 1;
+      let totalPages = 0;
+      let pages = [];
+
+      uploadZoneModal.addEventListener("click", () => fileInputModal.click());
+      uploadZoneModal.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        uploadZoneModal.classList.add("bg-blue-50", "dark:bg-blue-900/30");
+      });
+      uploadZoneModal.addEventListener("dragleave", () => {
+        uploadZoneModal.classList.remove("bg-blue-50", "dark:bg-blue-900/30");
+      });
+      uploadZoneModal.addEventListener("drop", (e) => {
+        e.preventDefault();
+        uploadZoneModal.classList.remove("bg-blue-50", "dark:bg-blue-900/30");
+        const file = e.dataTransfer.files[0];
+        if (file) handleFile(file);
+      });
+      fileInputModal.addEventListener("change", (e) => {
+        if (e.target.files[0]) handleFile(e.target.files[0]);
+      });
+
+      showUploadBtn.addEventListener("click", () => {
+        uploadModal.style.display = "block";
+        controls.classList.add("hidden");
+        bookContainer.classList.add("hidden");
+        showUploadBtnContainer.classList.add("hidden");
+        localStorage.removeItem("pdfData");
+      });
+
+      closeModal.addEventListener("click", () => {
+        uploadModal.style.display = "none";
+      });
+
+      window.addEventListener("click", (event) => {
+        if (event.target == uploadModal) {
+          uploadModal.style.display = "none";
+        }
+      });
+
+      async function handleFile(file) {
+        if (file.type !== "application/pdf") {
+          alert("Please upload a PDF file");
+          return;
+        }
+
+        loadingBar.classList.remove("hidden");
+        bookContainer.classList.add("hidden");
+        controls.classList.add("hidden");
+        uploadModal.style.display = "none";
+        progressBar.style.width = "0%";
+        loadingText.textContent = "Loading PDF...";
+
+        try {
+          const arrayBuffer = await file.arrayBuffer();
+          const base64String = arrayBufferToBase64(arrayBuffer);
+          localStorage.setItem("pdfData", base64String);
+          renderPDF(base64String);
+        } catch (error) {
+          console.error("Error loading PDF:", error);
+          alert("Error loading PDF. Please try again.");
+          loadingBar.classList.add("hidden");
+        }
+      }
+
+      function arrayBufferToBase64(buffer) {
+        let binary = "";
+        const bytes = new Uint8Array(buffer);
+        const len = bytes.byteLength;
+        for (let i = 0; i < len; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        return window.btoa(binary);
+      }
+
+      async function renderPDF(base64String) {
+        const pdfData = atob(base64String);
+        const pdf = await pdfjsLib.getDocument({ data: pdfData }).promise;
+        totalPages = pdf.numPages;
+        pages = [];
+
+        for (let i = 1; i <= totalPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: 1.5 });
+          const canvas = document.createElement("canvas");
+          const context = canvas.getContext("2d");
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+
+          await page.render({
+            canvasContext: context,
+            viewport: viewport,
+          }).promise;
+
+          pages.push(canvas.toDataURL());
+
+          // Update progress
+          const progress = (i / totalPages) * 100;
+          progressBar.style.width = `${progress}%`;
+          loadingText.textContent = `Processing page ${i} of ${totalPages}`;
+        }
+
+        initializeBook();
+        loadingBar.classList.add("hidden");
+        bookContainer.classList.remove("hidden");
+        controls.classList.remove("hidden");
+        showUploadBtnContainer.classList.remove("hidden");
+      }
+
+      function initializeBook() {
+        pagesContainer.innerHTML = "";
+        currentPage = 1;
+        totalPagesSpan.textContent = totalPages;
+
+        const pageDiv = createPage(pages[0], 1);
+        pagesContainer.appendChild(pageDiv);
+
+        updatePageDisplay();
+      }
+
+      function createPage(pageData, pageNumber) {
+        const pageDiv = document.createElement("div");
+        pageDiv.className = "page";
+        pageDiv.dataset.page = pageNumber;
+
+        const front = document.createElement("div");
+        front.className = "page-front";
+        const back = document.createElement("div");
+        back.className = "page-back";
+
+        const frontImg = document.createElement("img");
+        frontImg.src = pageData;
+        frontImg.className = "page-content";
+        front.appendChild(frontImg);
+
+        if (pageNumber < totalPages) {
+          const backImg = document.createElement("img");
+          backImg.src = pages[pageNumber];
+          backImg.className = "page-content";
+          back.appendChild(backImg);
+        }
+
+        pageDiv.appendChild(front);
+        pageDiv.appendChild(back);
+
+        return pageDiv;
+      }
+
+      function updatePageDisplay() {
+        currentPageSpan.textContent = currentPage;
+
+        document.querySelectorAll(".page").forEach((page) => {
+          const pageNum = parseInt(page.dataset.page);
+          if (pageNum < currentPage) {
+            page.classList.add("flipped");
+          } else {
+            page.classList.remove("flipped");
+          }
+        });
+
+        prevBtn.disabled = currentPage <= 1;
+        nextBtn.disabled = currentPage >= totalPages;
+
+        // Show the next page
+        if (currentPage < totalPages) {
+          const nextPageDiv = createPage(pages[currentPage], currentPage + 1);
+          pagesContainer.appendChild(nextPageDiv);
+        }
+      }
+
+      function turnPage(direction) {
+        const oldPage = currentPage;
+        if (direction === "next" && currentPage < totalPages) {
+          currentPage++;
+        } else if (direction === "prev" && currentPage > 1) {
+          currentPage--;
+        }
+
+        if (oldPage !== currentPage) {
+          updatePageDisplay();
+        }
+      }
+
+      prevBtn.addEventListener("click", () => turnPage("prev"));
+      nextBtn.addEventListener("click", () => turnPage("next"));
+
+      // Touch event handling for mobile devices
+      let touchStartX = 0;
+      let touchEndX = 0;
+
+      document.addEventListener("touchstart", (e) => {
+        touchStartX = e.changedTouches[0].screenX;
+      });
+
+      document.addEventListener("touchend", (e) => {
+        touchEndX = e.changedTouches[0].screenX;
+        handleSwipeGesture();
+      });
+
+      function handleSwipeGesture() {
+        if (touchEndX < touchStartX - 50) {
+          turnPage("next");
+        }
+        if (touchEndX > touchStartX + 50) {
+          turnPage("prev");
+        }
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft") {
+          turnPage("prev");
+        } else if (e.key === "ArrowRight") {
+          turnPage("next");
+        }
+      });
+
+      // Check for stored PDF data on page load
+      document.addEventListener("DOMContentLoaded", () => {
+        const storedPdfData = localStorage.getItem("pdfData");
+        if (storedPdfData) {
+          renderPDF(storedPdfData);
+        } else {
+          uploadModal.style.display = "block";
+        }
+      });
+
+      // Register service worker for PWA
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("/service-worker.js").then(
+            (registration) => {
+              console.log(
+                "ServiceWorker registration successful with scope: ",
+                registration.scope
+              );
+            },
+            (error) => {
+              console.log("ServiceWorker registration failed: ", error);
+            }
+          );
+        });
+      }
+    </script>
+  </body>
+</html>
